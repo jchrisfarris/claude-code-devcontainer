@@ -120,6 +120,7 @@ claude          # Ready to work
 devc .              Install template + start container in current directory
 devc up             Start the devcontainer
 devc rebuild        Rebuild container (preserves persistent volumes)
+devc destroy [-f]   Remove container, volumes, and image for current project
 devc down           Stop the container
 devc shell          Open zsh shell in container
 devc exec CMD       Execute command inside the container
@@ -129,6 +130,8 @@ devc sync [NAME]    Sync Claude Code sessions from devcontainers to host
 devc template DIR   Copy devcontainer files to directory
 devc self-install   Install devc to ~/.local/bin
 ```
+
+> **Note:** Use `devc destroy` to clean up a project's Docker resources. Removing containers manually (e.g., `docker rm`) will leave orphaned volumes and images behind that `devc destroy` won't be able to find.
 
 ## Session Sync for `/insights`
 
