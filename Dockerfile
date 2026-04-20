@@ -30,6 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   ipset \
   iptables \
   iproute2 \
+  gnupg software-properties-common \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install git-delta
@@ -60,6 +61,17 @@ RUN mkdir -p /commandhistory /workspace /home/vscode/.claude /opt && \
   touch /commandhistory/.zsh_history && \
   chown -R vscode:vscode /commandhistory /workspace /home/vscode/.claude /opt
 
+
+# Install AWS CLI
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip" && \
+  unzip awscliv2.zip &&  \
+  sudo ./aws/install
+
+# Install Terraform
+RUN wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor > /usr/share/keyrings/hashicorp-archive-keyring.gpg
+RUN echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(grep -oP '(?<=UBUNTU_CODENAME=).*' /etc/os-release || lsb_release -cs) main" > /etc/apt/sources.list.d/hashicorp.list
+RUN apt update && apt-get install -y terraform
+
 # Set environment variables
 ENV DEVCONTAINER=true
 ENV SHELL=/bin/zsh
@@ -76,15 +88,15 @@ ENV PATH="/home/vscode/.local/bin:$PATH"
 
 # Install Claude Code natively with marketplace plugins
 RUN curl -fsSL https://claude.ai/install.sh | bash && \
-  claude plugin marketplace add anthropics/skills && \
-  claude plugin marketplace add trailofbits/skills && \
-  claude plugin marketplace add trailofbits/skills-curated
+  claude plugin marketplace add anthropics/skills
 
 # Install Python 3.13 via uv (fast binary download, not source compilation)
 RUN uv python install 3.13 --default
 
 # Install ast-grep (AST-based code search)
 RUN uv tool install ast-grep-cli
+RUN uv tool install pip
+RUN pip3 install cftdeploy
 
 # Install fnm (Fast Node Manager) and Node 22
 ARG NODE_VERSION=22
@@ -104,6 +116,10 @@ RUN sh -c "$(curl -fsSL https://github.com/deluan/zsh-in-docker/releases/downloa
 
 # Copy zsh configuration
 COPY --chown=vscode:vscode .zshrc /home/vscode/.zshrc.custom
+
+# Setup AWS Config
+RUN mkdir /home/vscode/.aws
+COPY aws-config/config /home/vscode/.aws/config
 
 # Append custom zshrc to the main one
 RUN echo 'source ~/.zshrc.custom' >> /home/vscode/.zshrc
