@@ -28,6 +28,7 @@ Usage: devc <command> [options]
 Commands:
     .                   Install devcontainer template to current directory and start
     up                  Start the devcontainer in current directory
+    claude              Runs claude --dangerously-skip-permissions in the container
     rebuild             Rebuild the devcontainer (preserves auth volumes)
     down                Stop the devcontainer
     shell               Open a shell in the running container
@@ -45,6 +46,7 @@ Commands:
 Examples:
     devc .                      # Install template and start container
     devc up                     # Start container in current directory
+    devc claude                 # Starts Claude in Yolo Mode
     devc rebuild                # Clean rebuild
     devc shell                  # Open interactive shell
     devc self-install           # Install devc to PATH
@@ -213,6 +215,7 @@ cmd_template() {
   cp "$SCRIPT_DIR/devcontainer.json" "$devcontainer_dir/"
   cp "$SCRIPT_DIR/post_install.py" "$devcontainer_dir/"
   cp "$SCRIPT_DIR/.zshrc" "$devcontainer_dir/"
+  cp -a "$SCRIPT_DIR/aws-config" "$devcontainer_dir/"
 
   # Restore preserved mounts
   if [[ -n "$preserved_mounts" ]]; then
@@ -804,6 +807,10 @@ main() {
   case "$command" in
   .)
     cmd_dot
+    ;;
+  claude)
+    [[ "${1:-}" == "--" ]] && shift
+    cmd_exec "/home/vscode/.local/bin/claude" "--dangerously-skip-permissions" "--remote-control" "$@"
     ;;
   up)
     cmd_up "$@"
