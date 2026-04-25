@@ -108,7 +108,7 @@ def create_role(iam, account_id: str, role_name: str) -> str:
             AssumeRolePolicyDocument=trust_policy,
             MaxSessionDuration=43200,  # 12 hours (role ceiling; session uses DEFAULT_SESSION_DURATION_SECONDS)
             Description=(
-                "Claude Code devcontainer role — managed by devc. "
+                "Claude Code devcontainer role - managed by devc. "
                 "Actual permissions are constrained by the session policy in "
                 "/workspace/session-policy.json inside the container."
             ),
