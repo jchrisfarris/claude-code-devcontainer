@@ -3,7 +3,9 @@
 
 Runs on container creation to set up:
 - Onboarding bypass (when CLAUDE_CODE_OAUTH_TOKEN is set)
-- Claude settings (bypassPermissions mode)
+- Claude user config (theme, remote control, workspace trust)
+- Claude settings (bypassPermissions, hooks, statusline, deny rules)
+- Default Claude commands and statusline script
 - Tmux configuration (200k history, mouse support)
 - Directory ownership fixes for mounted volumes
 """
@@ -35,7 +37,7 @@ def setup_onboarding_bypass():
         )
         return
 
-    # When `CLAUDE_CONFIG_DIR` is set, as is done in `devcontainer.json`, `claude` unexpectedly 
+    # When `CLAUDE_CONFIG_DIR` is set, as is done in `devcontainer.json`, `claude` unexpectedly
     # looks for `.claude.json` in *that* folder, instead of in `~`, contradicting the documentation.
     #  See https://github.com/anthropics/claude-code/issues/3833#issuecomment-3694918874
     claude_json_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home()))
@@ -94,8 +96,51 @@ def setup_onboarding_bypass():
     )
 
 
+def setup_claude_user_config():
+    """Pre-configure Claude Code user preferences in .claude.json.
+
+    Sets theme, workspace trust, and remote-control acceptance so those
+    dialogs don't interrupt the first session. The bypass-permissions warning
+    is intentionally left intact — it's the container's one remaining safety
+    acknowledgement.
+    """
+    claude_json_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home()))
+    claude_json_dir.mkdir(parents=True, exist_ok=True)
+    claude_json = claude_json_dir / ".claude.json"
+
+    config: dict = {}
+    if claude_json.exists():
+        with contextlib.suppress(json.JSONDecodeError):
+            config = json.loads(claude_json.read_text())
+
+    changed = False
+
+    # Dark theme (matches most terminal setups; also happens to be the compiled-in default)
+    if config.get("theme") != "dark":
+        config["theme"] = "dark"
+        changed = True
+
+    # Skip "Enable Remote Control? (y/n)" prompt when --remote-control is passed
+    if not config.get("remoteDialogSeen"):
+        config["remoteDialogSeen"] = True
+        changed = True
+
+    # Pre-accept the workspace trust dialog for /workspace
+    projects = config.setdefault("projects", {})
+    workspace = projects.setdefault("/workspace", {})
+    if not workspace.get("hasTrustDialogAccepted"):
+        workspace["hasTrustDialogAccepted"] = True
+        changed = True
+
+    if changed:
+        claude_json.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+        print(f"[post_install] Claude user config updated: {claude_json}", file=sys.stderr)
+    else:
+        print("[post_install] Claude user config already configured", file=sys.stderr)
+
+
 def setup_claude_settings():
-    """Configure Claude Code with bypassPermissions enabled."""
+    """Configure Claude Code with bypassPermissions and safety defaults."""
     claude_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude"))
     claude_dir.mkdir(parents=True, exist_ok=True)
 
@@ -107,15 +152,98 @@ def setup_claude_settings():
         with contextlib.suppress(json.JSONDecodeError):
             settings = json.loads(settings_file.read_text())
 
-    # Set bypassPermissions mode
+    # Always enforce bypassPermissions (container is the security boundary)
     if "permissions" not in settings:
         settings["permissions"] = {}
     settings["permissions"]["defaultMode"] = "bypassPermissions"
+
+    # Deny rules act as hard blocks even in bypassPermissions mode
+    if "deny" not in settings["permissions"]:
+        settings["permissions"]["deny"] = [
+            "Bash(rm -rf *)",
+            "Bash(rm -fr *)",
+            "Bash(mkfs *)",
+            "Bash(dd *)",
+            "Bash(wget *|bash*)",
+            "Bash(wget *| bash*)",
+            "Bash(git push --force*)",
+            "Bash(git push *--force*)",
+            "Bash(git reset --hard*)",
+            "Edit(~/.bashrc)",
+            "Edit(~/.zshrc)",
+        ]
+
+    # Set other defaults only if not already configured (preserves user customizations)
+    defaults: dict = {
+
+        "skipDangerousModePermissionPrompt": True,
+        "theme": "dark",
+        "cleanupPeriodDays": 365,
+        "enableAllProjectMcpServers": False,
+        "alwaysThinkingEnabled": True,
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Bash",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": (
+                                "CMD=$(jq -r '.tool_input.command'); "
+                                "if echo \"$CMD\" | grep -qiE "
+                                "'(^|;[[:space:]]*|&&[[:space:]]*|[|][|][[:space:]]*|[|][[:space:]]*)rm[[:space:]]' "
+                                "&& echo \"$CMD\" | grep -qiE '(^|[[:space:]])-[a-zA-Z]*[rR]|--recursive' "
+                                "&& echo \"$CMD\" | grep -qiE '(^|[[:space:]])-[a-zA-Z]*[fF]|--force'; "
+                                "then echo 'BLOCKED: Use trash instead of rm -rf' >&2; exit 2; fi"
+                            ),
+                        },
+                        {
+                            "type": "command",
+                            "command": (
+                                "CMD=$(jq -r '.tool_input.command'); "
+                                "if echo \"$CMD\" | grep -qE 'git[[:space:]]+push.*(main|master)'; "
+                                "then echo 'BLOCKED: Use feature branches, not direct push to main' >&2; exit 2; fi"
+                            ),
+                        },
+                    ],
+                }
+            ]
+        },
+        "statusLine": {
+            "type": "command",
+            "command": "~/.claude/statusline.sh",
+        },
+    }
+
+    for key, value in defaults.items():
+        settings.setdefault(key, value)
 
     settings_file.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
     print(
         f"[post_install] Claude settings configured: {settings_file}", file=sys.stderr
     )
+
+
+def setup_claude_defaults():
+    """Install default Claude scripts from /opt/claude-defaults/.
+
+    Commands are served via a bind mount (.devcontainer/commands → ~/.claude/commands)
+    so they stay live-updated from the host without a container rebuild.
+    """
+    claude_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude"))
+    defaults_dir = Path("/opt/claude-defaults")
+
+    if not defaults_dir.exists():
+        print("[post_install] No /opt/claude-defaults found, skipping", file=sys.stderr)
+        return
+
+    # Install statusline script (only if not already customized)
+    statusline_src = defaults_dir / "statusline.sh"
+    statusline_dst = claude_dir / "statusline.sh"
+    if statusline_src.exists() and not statusline_dst.exists():
+        statusline_dst.write_bytes(statusline_src.read_bytes())
+        statusline_dst.chmod(0o755)
+        print(f"[post_install] Installed statusline: {statusline_dst}", file=sys.stderr)
 
 
 def setup_tmux_config():
@@ -297,9 +425,11 @@ def main():
     print("[post_install] Starting post-install configuration...", file=sys.stderr)
 
     setup_onboarding_bypass()
+    fix_directory_ownership()
+    # setup_claude_user_config()
+    setup_claude_defaults()
     setup_claude_settings()
     setup_tmux_config()
-    fix_directory_ownership()
     setup_global_gitignore()
 
     print("[post_install] Configuration complete!", file=sys.stderr)

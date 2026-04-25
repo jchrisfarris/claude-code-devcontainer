@@ -23,6 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   # Utilities
   jq \
   nano \
+  trash-cli \
   unzip \
   vim \
   # Network tools (for security testing)
@@ -86,6 +87,11 @@ USER vscode
 # Set PATH early so claude and other user-installed binaries are available
 ENV PATH="/home/vscode/.local/bin:$PATH"
 
+# Set CLAUDE_CONFIG_DIR so all build-time claude invocations write config to the
+# same directory that the runtime volume mounts over. Without this, `claude` would
+# write ~/.claude.json (home dir) and create a stale artifact baked into the image.
+ENV CLAUDE_CONFIG_DIR="/home/vscode/.claude"
+
 # Install Claude Code natively with marketplace plugins
 RUN curl -fsSL https://claude.ai/install.sh | bash && \
   claude plugin marketplace add anthropics/skills
@@ -126,3 +132,7 @@ RUN echo 'source ~/.zshrc.custom' >> /home/vscode/.zshrc
 
 # Copy post_install script
 COPY --chown=vscode:vscode post_install.py /opt/post_install.py
+
+# Install Claude Code defaults (statusline)
+RUN mkdir -p /opt/claude-defaults
+COPY --chown=vscode:vscode statusline.sh /opt/claude-defaults/statusline.sh

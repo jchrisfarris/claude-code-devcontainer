@@ -1,127 +1,72 @@
-# Claude Code in a devcontainer
+# Claude Code Devcontainer
 
-A sandboxed development environment for running Claude Code with `bypassPermissions` safely enabled. Built at [Trail of Bits](https://www.trailofbits.com/) for security audit workflows.
+A sandboxed environment for running Claude Code in fully autonomous mode — with explicit, user-controlled constraints on what it can actually do.
 
-## Why Use This?
+Forked from [Trail of Bits](https://github.com/trailofbits/claude-code-devcontainer), with their security-focused foundations kept intact and extended with AWS credential scoping.
 
-Running Claude with `bypassPermissions` on your host machine is risky—it can execute any command without confirmation. This devcontainer provides **filesystem isolation** so you get the productivity benefits of unrestricted Claude without risking your host system.
+## The Idea
 
-**Designed for:**
+Claude running in `--dangerously-skip-permissions` mode is productive but risky on a host machine. This repo solves that with two independent layers of constraint:
 
-- **Security audits**: Review client code without risking your host
-- **Untrusted repositories**: Explore unknown codebases safely
-- **Experimental work**: Let Claude modify code freely in isolation
-- **Multi-repo engagements**: Work on multiple related repositories
+**1. Filesystem isolation** — Claude runs in a Docker devcontainer. It cannot touch your host files, install system packages, or affect other projects. The container is the sandbox.
+
+**2. AWS permission scoping** — When Claude needs cloud access, you inject temporary credentials scoped to a session policy. Claude starts read-only. When it hits a permission error and needs more, it edits the session policy file and asks you to re-run one command. You stay in control of what it can do in AWS without approving every individual action.
+
+Together these let Claude operate autonomously on real tasks — including `terraform apply` and AWS deployments — while you retain meaningful oversight without becoming a bottleneck.
 
 ## Prerequisites
 
 - **Docker runtime** (one of):
-  - [Docker Desktop](https://docker.com/products/docker-desktop) - ensure it's running
-  - [OrbStack](https://orbstack.dev/)
-  - [Colima](https://github.com/abiosoft/colima): `brew install colima docker && colima start`
+  - [Docker Desktop](https://docker.com/products/docker-desktop)
 
 - **For terminal workflows** (one-time install):
 
   ```bash
   npm install -g @devcontainers/cli
-  git clone https://github.com/trailofbits/claude-code-devcontainer ~/.claude-devcontainer
+  git clone https://github.com/YOUR-USERNAME/claude-code-devcontainer ~/.claude-devcontainer
   ~/.claude-devcontainer/install.sh self-install
   ```
 
-<details>
-<summary><strong>Optimizing Colima for Apple Silicon</strong></summary>
-
-Colima's defaults (QEMU + sshfs) are conservative. For better performance:
-
-```bash
-# Stop and delete current VM (removes containers/images)
-colima stop && colima delete
-
-# Start with optimized settings
-colima start \
-  --cpu 4 \
-  --memory 8 \
-  --disk 100 \
-  --vm-type vz \
-  --vz-rosetta \
-  --mount-type virtiofs
-```
-
-Adjust `--cpu` and `--memory` based on your Mac (e.g., 6/16 for Pro, 8/32 for Max).
-
-| Option | Benefit |
-|--------|---------|
-| `--vm-type vz` | Apple Virtualization.framework (faster than QEMU) |
-| `--mount-type virtiofs` | 5-10x faster file I/O than sshfs |
-| `--vz-rosetta` | Run x86 containers via Rosetta |
-
-Verify with `colima status` - should show "macOS Virtualization.Framework" and "virtiofs".
-
-</details>
+- **For AWS credential injection:** `uv` must be installed on the host (`brew install uv`)
 
 ## Quick Start
 
 Choose the pattern that fits your workflow:
 
-### Pattern A: Per-Project Container (Isolated)
+### Pattern A: Per-Project Container
 
-Each project gets its own container with independent volumes. Best for one-off reviews, untrusted repos, or when you need isolation between projects.
-
-**Terminal:**
+Each project gets its own isolated container. Best for one-off reviews or untrusted repos.
 
 ```bash
-git clone <untrusted-repo>
-cd untrusted-repo
-devc .          # Installs template + starts container
-devc shell      # Opens shell in container
+git clone <repo-url>
+cd repo
+devc .          # Install devcontainer template + start container
+devc shell      # Open shell in container
 ```
 
-**VS Code / Cursor:**
+### Pattern B: Shared Workspace Container (preferred)
 
-1. Install the Dev Containers extension:
-   - VS Code: `ms-vscode-remote.remote-containers`
-   - Cursor: `anysphere.remote-containers`
-
-2. Set up the devcontainer (choose one):
-
-   ```bash
-   # Option A: Use devc (recommended)
-   devc .
-
-   # Option B: Clone manually
-   git clone https://github.com/trailofbits/claude-code-devcontainer .devcontainer/
-   ```
-
-3. Open **your project folder** in VS Code, then:
-   - Press `Cmd+Shift+P` (Mac) or `Ctrl+Shift+P` (Windows/Linux)
-   - Type "Reopen in Container" and select **Dev Containers: Reopen in Container**
-
-### Pattern B: Shared Workspace Container (Grouped)
-
-A parent directory contains the devcontainer config, and you clone multiple repos inside. Shared volumes across all repos. Best for client engagements, related repositories, or ongoing work.
+A parent directory holds the devcontainer config; clone multiple repos inside. Best for multiple repos, of when you have files that doen't belong in git.
 
 ```bash
-# Create workspace for a client engagement
-mkdir -p ~/sandbox/client-name
-cd ~/sandbox/client-name
-devc .          # Install template + start container
-devc shell      # Opens shell in container
+mkdir -p ~/sandbox/my-project && cd ~/sandbox/my-project
+devc .
+devc shell
 
 # Inside container:
-git clone <client-repo-1>
-git clone <client-repo-2>
-cd client-repo-1
-claude          # Ready to work
+git clone <repo-1>
+git clone <repo-2>
+cd repo-1 && claude
 ```
 
 ## Token-Based Auth (Headless)
 
-For headless servers or to skip the interactive login wizard:
+To skip the interactive login wizard:
 
 ```bash
-claude setup-token                          # run on host, one-time
+claude setup-token                        # run on host, one-time
 export CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...
-devc rebuild                                # rebuilds with token
+devc rebuild                              # rebuilds with token injected
 ```
 
 The token is forwarded into the container. On each container creation, `post_install.py` runs a one-shot auth handshake so `claude` starts without the login wizard.
@@ -130,34 +75,90 @@ This works around Claude Code's interactive onboarding wizard always showing in 
 
 If you don't set a token, the interactive login flow works as before.
 
-## CLI Helper Commands
+## AWS Credentials
+
+Claude starts with read-only AWS access. It can request additional permissions by editing a policy file; you grant them by re-running one command.
+
+### One-time setup per AWS account
+
+```bash
+devc aws-setup-role --profile my-profile
+```
+
+This creates an IAM role called `ClaudeDevContainer` in the account associated with `my-profile`, with `AdministratorAccess` attached. The session policy (below) is what actually constrains Claude — the role's broad permissions are the ceiling, not the floor.
+
+For IAM Identity Center (SSO) users: the role is assumable by any principal in the account, so your SSO role can assume it without per-user trust policy configuration.
+
+### Inject credentials before a session
+
+```bash
+devc aws-creds --profile my-profile
+```
+
+This:
+1. Assumes `ClaudeDevContainer` with a read-only session policy
+2. Injects the temporary credentials into the running container as profile `my-profile`
+3. Writes the active session policy to `/workspace/session-policy.json`
+
+Credentials expire after 6 hours. Re-run the command to refresh.
+
+### How Claude requests more permissions
+
+When Claude hits an `AccessDenied` error, it edits `/workspace/session-policy.json` to add what it needs. For example, to run `terraform apply` it might add:
+
+```json
+{
+  "Effect": "Allow",
+  "Action": ["ec2:*", "s3:*", "iam:PassRole"],
+  "Resource": "*"
+}
+```
+
+Then it asks you to re-run `devc aws-creds --profile my-profile`. The next session picks up the updated policy. You review the diff before running — that's the approval gate.
+
+The default session policy (read-only) lives in `aws-config/session-policy.json` in this repo and is used on first run. After that, the container's copy is used on re-runs.
+
+### Multiple AWS accounts
+
+Run `devc aws-creds` multiple times with different profiles — credentials accumulate as named profiles in the container's `~/.aws/credentials`:
+
+```bash
+devc aws-creds --profile dev
+devc aws-creds --profile staging
+```
+
+Inside the container, use `AWS_PROFILE=dev` or `--profile dev` to select. Credentials do not survive `devc rebuild` by design.
+
+## CLI Reference
 
 ```
-devc .              Install template + start container in current directory
+devc .              Install devcontainer template + start container
 devc up             Start the devcontainer
 devc rebuild        Rebuild container (preserves persistent volumes)
-devc destroy [-f]   Remove container, volumes, and image for current project
+devc destroy [-f]   Remove container, volumes, and image
 devc down           Stop the container
 devc shell          Open zsh shell in container
 devc exec CMD       Execute command inside the container
 devc upgrade        Upgrade Claude Code in the container
 devc mount SRC DST  Add a bind mount (host → container)
-devc sync [NAME]    Sync Claude Code sessions from devcontainers to host
-devc template DIR   Copy devcontainer files to directory
+devc sync [NAME]    Sync Claude Code sessions to host (for /insights)
+devc cp CONT HOST   Copy files from container to host
+devc aws-creds      Inject scoped AWS credentials into container
+devc aws-setup-role Create the ClaudeDevContainer IAM role
 devc self-install   Install devc to ~/.local/bin
+devc update         Update devc to latest version
+devc claude         Run claude --dangerously-skip-permissions in container
 ```
 
-> **Note:** Use `devc destroy` to clean up a project's Docker resources. Removing containers manually (e.g., `docker rm`) will leave orphaned volumes and images behind that `devc destroy` won't be able to find.
+> Use `devc destroy` to clean up Docker resources. Removing containers manually (e.g. `docker rm`) leaves orphaned volumes that `devc destroy` won't find.
 
 ## Session Sync for `/insights`
 
-Claude Code's `/insights` command analyzes your session history, but it only reads from `~/.claude/projects/` on the host. Sessions inside devcontainer volumes are invisible to it.
-
-`devc sync` copies session logs from all devcontainers (running and stopped) to the host so `/insights` can include them:
+Claude Code's `/insights` reads from `~/.claude/projects/` on the host. Sessions inside devcontainer volumes are invisible to it. `devc sync` copies them:
 
 ```bash
 devc sync              # Sync all devcontainers
-devc sync crypto       # Filter by project name (substring match)
+devc sync my-project   # Filter by name (substring match)
 ```
 
 Devcontainers are auto-discovered via Docker labels — no need to know container names or IDs. The sync is incremental, so it's safe to run repeatedly.
@@ -179,48 +180,9 @@ devc mount ~/secrets /secrets --readonly
 
 This adds a bind mount to `devcontainer.json` and recreates the container. Existing mounts are preserved across `devc template` updates.
 
-**Tip:** A shared "drop folder" is useful for passing files in without mounting your entire home directory.
+> Avoid mounting large host directories. Every mounted path is writable from inside the container unless `--readonly` is specified.
 
-> **Security note:** Avoid mounting large host directories (e.g., `$HOME`). Every mounted path is writable from inside the container unless `--readonly` is specified, which undermines the filesystem isolation this project provides.
 
-## Network Isolation
-
-By default, containers have full outbound network access. For stricter security, use iptables to restrict network access.
-
-### When to Enable Network Isolation
-
-- Reviewing code that may contain malicious dependencies
-- Auditing software with telemetry or phone-home behavior
-- Maximum isolation for highly sensitive reviews
-
-### Example: Claude + GitHub + Package Registries
-
-```bash
-sudo iptables -A OUTPUT -d api.anthropic.com -j ACCEPT
-sudo iptables -A OUTPUT -d github.com -j ACCEPT
-sudo iptables -A OUTPUT -d raw.githubusercontent.com -j ACCEPT
-sudo iptables -A OUTPUT -d registry.npmjs.org -j ACCEPT
-sudo iptables -A OUTPUT -d pypi.org -j ACCEPT
-sudo iptables -A OUTPUT -d files.pythonhosted.org -j ACCEPT
-sudo iptables -A OUTPUT -o lo -j ACCEPT
-sudo iptables -A OUTPUT -j DROP
-```
-
-### Trade-offs
-
-- Blocks package managers unless you allowlist registries
-- May break tools that require network access
-- DNS resolution still works (consider blocking if paranoid)
-
-## Security Model
-
-This devcontainer provides **filesystem isolation** but not complete sandboxing.
-
-**Sandboxed:** Filesystem (host files inaccessible), processes (isolated from host), package installations (stay in container)
-
-**Not sandboxed:** Network (full outbound by default—see [Network Isolation](#network-isolation)), git identity (`~/.gitconfig` mounted read-only), Docker socket (not mounted by default)
-
-The container auto-configures `bypassPermissions` mode—Claude runs commands without confirmation. This would be risky on a host machine, but the container itself is the sandbox.
 
 ## Container Details
 
@@ -228,56 +190,35 @@ The container auto-configures `bypassPermissions` mode—Claude runs commands wi
 |-----------|---------|
 | Base | Ubuntu 24.04, Node.js 22, Python 3.13 + uv, zsh |
 | User | `vscode` (passwordless sudo), working dir `/workspace` |
-| Tools | `rg`, `fd`, `tmux`, `fzf`, `delta`, `iptables`, `ipset` |
-| Volumes (survive rebuilds) | Command history (`/commandhistory`), Claude config (`~/.claude`), GitHub CLI auth (`~/.config/gh`) |
+| Tools | `rg`, `fd`, `ast-grep`, `tmux`, `fzf`, `delta`, `iptables`, `terraform`, AWS CLI |
+| Persistent volumes | Shell history (`/commandhistory`), Claude config (`~/.claude`), GitHub CLI auth (`~/.config/gh`) |
 | Host mounts | `~/.gitconfig` (read-only), `.devcontainer/` (read-only) |
-| Auto-configured | [anthropics](https://github.com/anthropics/claude-code-plugins) + [trailofbits](https://github.com/trailofbits/claude-code-plugins) skills, git-delta |
-
-Volumes are stored outside the container, so your shell history, Claude settings, and `gh` login persist even after `devc rebuild`. Host `~/.gitconfig` is mounted read-only for git identity.
+| AWS credentials | Not persisted — lost on `devc rebuild` (intentional) |
 
 ## Troubleshooting
 
-### "devcontainer CLI not found"
-
+**`devcontainer CLI not found`**
 ```bash
 npm install -g @devcontainers/cli
 ```
 
-### Container won't start
+**`uv: command not found` when running `devc aws-creds`**
+```bash
+brew install uv
+```
 
+**SSO credentials expired**
+```bash
+aws sso login --profile my-profile
+devc aws-creds --profile my-profile
+```
+
+**Container won't start**
 1. Check Docker is running
-2. Try rebuilding: `devc rebuild`
-3. Check logs: `docker logs $(docker ps -lq)`
+2. `devc rebuild`
+3. `docker logs $(docker ps -lq)`
 
-### GitHub CLI auth not persisting
-
-The gh volume may need ownership fix:
-
+**GitHub CLI auth not persisting**
 ```bash
 sudo chown -R $(id -u):$(id -g) ~/.config/gh
-```
-
-### Python/uv not working
-
-Python is managed via uv:
-
-```bash
-uv run script.py              # Run a script
-uv add package                # Add project dependency
-uv run --with requests py.py  # Ad-hoc dependency
-```
-
-## Development
-
-Build the image manually:
-
-```bash
-devcontainer build --workspace-folder .
-```
-
-Test the container:
-
-```bash
-devcontainer up --workspace-folder .
-devcontainer exec --workspace-folder . zsh
 ```

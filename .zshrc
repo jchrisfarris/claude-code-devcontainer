@@ -2,7 +2,7 @@
 # Zsh configuration for Claude Code devcontainer
 
 # Add Claude Code to PATH
-export PATH="$HOME/.local/bin:$PATH"
+export PATH="$HOME/.local/bin:$PATH:$HOME/.local/share/uv/tools/pip/bin"
 
 # fnm (Fast Node Manager)
 export FNM_DIR="$HOME/.fnm"
