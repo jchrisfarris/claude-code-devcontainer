@@ -41,6 +41,8 @@ Commands:
     sync [project] [--trusted]  Sync sessions from devcontainers to host
     cp <cont> <host>    Copy files/directories from container to host
     destroy [-f]        Remove container, volumes, and image for current project
+    aws-creds           Assume ClaudeDevContainer role and inject credentials into container
+    aws-setup-role      Create the ClaudeDevContainer IAM role in the target account
     help                Show this help message
 
 Examples:
@@ -59,6 +61,8 @@ Examples:
     devc cp /some/file ./out    # Copy a path from container to host
     devc destroy                # Remove all project Docker resources
     devc destroy -f             # Skip confirmation prompt
+    devc aws-creds --profile myprofile        # Inject scoped AWS credentials
+    devc aws-setup-role --profile myprofile  # Create the ClaudeDevContainer role
 EOF
 }
 
@@ -639,6 +643,75 @@ cmd_update() {
   fi
 }
 
+cmd_aws_creds() {
+  local profile=""
+  local role_name=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --profile)
+        profile="$2"
+        shift 2
+        ;;
+      --role-name)
+        role_name="$2"
+        shift 2
+        ;;
+      *)
+        log_error "Unknown option: $1"
+        log_info "Usage: devc aws-creds --profile PROFILE [--role-name NAME]"
+        exit 1
+        ;;
+    esac
+  done
+
+  if [[ -z "$profile" ]]; then
+    log_error "Usage: devc aws-creds --profile PROFILE [--role-name NAME]"
+    exit 1
+  fi
+
+  local workspace
+  workspace="$(get_workspace_folder)"
+
+  local args=("aws-creds" "--profile" "$profile" "--workspace" "$workspace")
+  [[ -n "$role_name" ]] && args+=("--role-name" "$role_name")
+
+  uv run "$SCRIPT_DIR/aws_creds.py" "${args[@]}"
+}
+
+cmd_aws_setup_role() {
+  local profile=""
+  local role_name=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --profile)
+        profile="$2"
+        shift 2
+        ;;
+      --role-name)
+        role_name="$2"
+        shift 2
+        ;;
+      *)
+        log_error "Unknown option: $1"
+        log_info "Usage: devc aws-setup-role --profile PROFILE [--role-name NAME]"
+        exit 1
+        ;;
+    esac
+  done
+
+  if [[ -z "$profile" ]]; then
+    log_error "Usage: devc aws-setup-role --profile PROFILE [--role-name NAME]"
+    exit 1
+  fi
+
+  local args=("aws-setup-role" "--profile" "$profile")
+  [[ -n "$role_name" ]] && args+=("--role-name" "$role_name")
+
+  uv run "$SCRIPT_DIR/aws_creds.py" "${args[@]}"
+}
+
 cmd_dot() {
   # Install template and start container in one command
   cmd_template "."
@@ -851,6 +924,12 @@ main() {
     ;;
   template)
     cmd_template "$@"
+    ;;
+  aws-creds)
+    cmd_aws_creds "$@"
+    ;;
+  aws-setup-role)
+    cmd_aws_setup_role "$@"
     ;;
   help | --help | -h)
     print_usage

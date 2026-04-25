@@ -1,0 +1,23 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "*:Describe*",
+        "*:List*",
+        "*:Get*",
+        "*:View*",
+        "*:Lookup*",
+        "*:Search*",
+        "*:Scan*",
+        "*:Query*",
+        "*:Check*",
+        "*:Validate*",
+        "*:Read*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
