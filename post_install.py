@@ -246,6 +246,83 @@ def setup_claude_defaults():
         print(f"[post_install] Installed statusline: {statusline_dst}", file=sys.stderr)
 
 
+AWS_MCP_WRAPPER = "/opt/claude-defaults/aws-mcp-proxy.sh"
+AWS_PLUGIN_ID = "aws-core@agent-toolkit-for-aws"
+
+
+def setup_aws_mcp():
+    """Wire up the AWS Agent Toolkit plugin.
+
+    Two responsibilities:
+
+    1. Ensure ``aws-core@agent-toolkit-for-aws`` is enabled in
+       ``settings.json`` so the plugin is active on first launch (the
+       Dockerfile installs it; this is the belt-and-suspenders side).
+
+    2. Rewrite the plugin's bundled ``.mcp.json`` so the ``aws`` MCP server
+       calls our wrapper script. The plugin ships with ``AWS_REGION`` baked
+       into the proxy invocation as a literal CLI arg; the wrapper resolves
+       region from the AWS credential chain at launch time instead.
+    """
+    claude_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude"))
+    wrapper = Path(AWS_MCP_WRAPPER)
+
+    if not wrapper.exists():
+        print(
+            f"[post_install] {wrapper} not found, skipping AWS MCP setup",
+            file=sys.stderr,
+        )
+        return
+
+    settings_file = claude_dir / "settings.json"
+    settings: dict = {}
+    if settings_file.exists():
+        with contextlib.suppress(json.JSONDecodeError):
+            settings = json.loads(settings_file.read_text())
+    enabled = settings.setdefault("enabledPlugins", {})
+    if enabled.get(AWS_PLUGIN_ID) is not True:
+        enabled[AWS_PLUGIN_ID] = True
+        settings_file.write_text(
+            json.dumps(settings, indent=2) + "\n", encoding="utf-8"
+        )
+        print(
+            f"[post_install] Enabled plugin {AWS_PLUGIN_ID} in {settings_file}",
+            file=sys.stderr,
+        )
+
+    patched = 0
+    for mcp_json in claude_dir.rglob(".mcp.json"):
+        try:
+            data = json.loads(mcp_json.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        servers = data.get("mcpServers") if isinstance(data, dict) else None
+        if not isinstance(servers, dict):
+            continue
+        aws = servers.get("aws")
+        if not isinstance(aws, dict):
+            continue
+        args = aws.get("args") or []
+        if not any("mcp-proxy-for-aws" in str(a) for a in args):
+            continue
+        if aws.get("command") == str(wrapper) and not args:
+            continue
+        servers["aws"] = {"command": str(wrapper), "args": []}
+        mcp_json.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        patched += 1
+        print(
+            f"[post_install] Rewrote AWS MCP server to use wrapper: {mcp_json}",
+            file=sys.stderr,
+        )
+
+    if patched == 0:
+        print(
+            "[post_install] No AWS Agent Toolkit .mcp.json found to patch "
+            "(plugin may not be installed yet)",
+            file=sys.stderr,
+        )
+
+
 def setup_tmux_config():
     """Configure tmux with 200k history, mouse support, and vi keys."""
     tmux_conf = Path.home() / ".tmux.conf"
@@ -429,6 +506,7 @@ def main():
     # setup_claude_user_config()
     setup_claude_defaults()
     setup_claude_settings()
+    setup_aws_mcp()
     setup_tmux_config()
     setup_global_gitignore()
 

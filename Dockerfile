@@ -99,7 +99,9 @@ ENV CLAUDE_CONFIG_DIR="/home/vscode/.claude"
 
 # Install Claude Code natively with marketplace plugins
 RUN curl -fsSL https://claude.ai/install.sh | bash && \
-  claude plugin marketplace add anthropics/skills
+  claude plugin marketplace add anthropics/skills && \
+  claude plugin marketplace add aws/agent-toolkit-for-aws && \
+  claude plugin install aws-core@agent-toolkit-for-aws
 
 # Install Python 3.13 via uv (fast binary download, not source compilation)
 RUN uv python install 3.13 --default
@@ -138,6 +140,8 @@ RUN echo 'source ~/.zshrc.custom' >> /home/vscode/.zshrc
 # Copy post_install script
 COPY --chown=vscode:vscode post_install.py /opt/post_install.py
 
-# Install Claude Code defaults (statusline)
+# Install Claude Code defaults (statusline + AWS Agent Toolkit MCP wrapper)
 RUN mkdir -p /opt/claude-defaults
 COPY --chown=vscode:vscode statusline.sh /opt/claude-defaults/statusline.sh
+COPY --chown=vscode:vscode aws-mcp-proxy.sh /opt/claude-defaults/aws-mcp-proxy.sh
+RUN chmod +x /opt/claude-defaults/aws-mcp-proxy.sh
