@@ -65,7 +65,8 @@ RUN mkdir -p /commandhistory /workspace /home/vscode/.claude /opt && \
 # Install AWS CLI
 RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip" && \
   unzip awscliv2.zip &&  \
-  sudo ./aws/install
+  sudo ./aws/install && \
+  rm awscliv2.zip
 
 # Install GCP CLi
 RUN curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
