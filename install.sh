@@ -48,6 +48,7 @@ Commands:
 Examples:
     devc .                      # Install template and start container
     devc up                     # Start container in current directory
+    devc down                   # Stop the running container
     devc claude                 # Starts Claude in Yolo Mode
     devc rebuild                # Clean rebuild
     devc shell                  # Open interactive shell
@@ -234,6 +235,39 @@ cmd_template() {
   log_success "Template installed to $devcontainer_dir"
 }
 
+# Sanitize a workspace basename into a valid Docker container name:
+# lowercase, restricted to [a-z0-9_.-], leading char must be alphanumeric.
+sanitize_container_name() {
+  local raw="$1"
+  echo "$raw" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed 's/[^a-z0-9_.-]/-/g; s/^[^a-z0-9]*//'
+}
+
+# Rename the workspace's container to the lowercase basename of the workspace
+# folder (e.g. /Users/chris/MyProject -> myproject) instead of Docker's random
+# pet name. Skips silently if the desired name is already in use.
+rename_container_to_workspace() {
+  local workspace_folder="$1"
+  local label="devcontainer.local_folder=$workspace_folder"
+  local container_id current_name desired_name
+
+  container_id=$(docker ps -q --filter "label=$label" 2>/dev/null | head -1 || true)
+  [[ -z "$container_id" ]] && return 0
+
+  desired_name=$(sanitize_container_name "$(basename "$workspace_folder")")
+  [[ -z "$desired_name" ]] && return 0
+
+  current_name=$(docker inspect --format '{{.Name}}' "$container_id" 2>/dev/null | sed 's|^/||')
+  [[ "$current_name" == "$desired_name" ]] && return 0
+
+  if docker rename "$container_id" "$desired_name" 2>/dev/null; then
+    log_info "Renamed container: $current_name -> $desired_name"
+  else
+    log_warn "Could not rename container to '$desired_name' (name already in use?)"
+  fi
+}
+
 cmd_up() {
   local workspace_folder
   workspace_folder="$(get_workspace_folder "${1:-}")"
@@ -243,6 +277,7 @@ cmd_up() {
   log_info "Starting devcontainer in $workspace_folder..."
 
   devcontainer up --workspace-folder "$workspace_folder"
+  rename_container_to_workspace "$workspace_folder"
   log_success "Devcontainer started"
 }
 
@@ -255,6 +290,7 @@ cmd_rebuild() {
   log_info "Rebuilding devcontainer in $workspace_folder..."
 
   devcontainer up --workspace-folder "$workspace_folder" --remove-existing-container
+  rename_container_to_workspace "$workspace_folder"
   log_success "Devcontainer rebuilt"
 }
 
@@ -342,6 +378,7 @@ cmd_mount() {
 
   log_info "Recreating container with new mount..."
   devcontainer up --workspace-folder "$workspace_folder" --remove-existing-container
+  rename_container_to_workspace "$workspace_folder"
 
   log_success "Mount added: $host_path → $container_path"
 }
