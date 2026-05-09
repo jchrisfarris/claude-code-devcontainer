@@ -134,9 +134,10 @@ Inside the container, use `AWS_PROFILE=dev` or `--profile dev` to select. Creden
 ```
 devc .              Install devcontainer template + start container
 devc up             Start the devcontainer
+devc down           Stop the container
 devc rebuild        Rebuild container (preserves persistent volumes)
 devc destroy [-f]   Remove container, volumes, and image
-devc down           Stop the container
+devc list [-a]      List running devcontainers (-a includes stopped)
 devc shell          Open zsh shell in container
 devc exec CMD       Execute command inside the container
 devc upgrade        Upgrade Claude Code in the container
@@ -151,6 +152,24 @@ devc claude         Run claude --dangerously-skip-permissions in container
 ```
 
 > Use `devc destroy` to clean up Docker resources. Removing containers manually (e.g. `docker rm`) leaves orphaned volumes that `devc destroy` won't find.
+
+## Updating
+
+There are three separate steps to getting updates, and they must happen in order:
+
+```
+devc update       → pulls new commits into the devc source repo (~/.claude-devcontainer/)
+devc template     → copies updated Dockerfile, devcontainer.json, etc. into your project's .devcontainer/
+devc rebuild      → builds a new image from .devcontainer/ and starts a fresh container
+```
+
+**Why three steps?**
+
+- `devc update` only refreshes the source repo on disk — it does a `git pull` and nothing else. Your running container is untouched.
+- `devc template` copies template files (Dockerfile, devcontainer.json, post_install.py, scripts) from the source repo into a specific project's `.devcontainer/` directory. Without this step, your project still has the old Dockerfile.
+- `devc rebuild` rebuilds the Docker image from whatever is currently in `.devcontainer/`. It only knows what's there — not what's in the source repo.
+
+If you skip `devc template`, `devc rebuild` will use the old template files and nothing will change in the container. Running `devc update` alone changes nothing about any running container.
 
 ## Session Sync for `/insights`
 
