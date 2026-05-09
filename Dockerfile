@@ -45,6 +45,7 @@ RUN ARCH=$(dpkg --print-architecture) && \
 
 # Install uv (Python package manager) via multi-stage copy
 COPY --from=uv /uv /usr/local/bin/uv
+COPY --from=uv /uvx /usr/local/bin/uvx
 
 # Install fzf from GitHub releases (newer than apt, includes built-in shell integration)
 # renovate: datasource=github-releases depName=junegunn/fzf
@@ -152,4 +153,4 @@ RUN chmod +x /opt/claude-defaults/aws-mcp-proxy.sh
 ARG BUILD_TIMESTAMP=unknown
 ENV BUILD_TIMESTAMP=$BUILD_TIMESTAMP
 LABEL devcontainer.build.timestamp=$BUILD_TIMESTAMP
-RUN echo "$BUILD_TIMESTAMP" > /etc/devcontainer-built
+RUN echo "$BUILD_TIMESTAMP" | sudo tee /etc/devcontainer-built

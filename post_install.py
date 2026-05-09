@@ -248,21 +248,21 @@ def setup_claude_defaults():
 
 AWS_MCP_WRAPPER = "/opt/claude-defaults/aws-mcp-proxy.sh"
 AWS_PLUGIN_ID = "aws-core@agent-toolkit-for-aws"
+AWS_MARKETPLACE = "aws/agent-toolkit-for-aws"
 
 
 def setup_aws_mcp():
     """Wire up the AWS Agent Toolkit plugin.
 
-    Two responsibilities:
+    Runs on every container creation so it works even when the ~/.claude
+    volume is preserved across rebuilds (which shadows the image layer where
+    the plugin was installed at build time).
 
-    1. Ensure ``aws-core@agent-toolkit-for-aws`` is enabled in
-       ``settings.json`` so the plugin is active on first launch (the
-       Dockerfile installs it; this is the belt-and-suspenders side).
-
-    2. Rewrite the plugin's bundled ``.mcp.json`` so the ``aws`` MCP server
-       calls our wrapper script. The plugin ships with ``AWS_REGION`` baked
-       into the proxy invocation as a literal CLI arg; the wrapper resolves
-       region from the AWS credential chain at launch time instead.
+    1. Ensure the marketplace is registered and the plugin is installed.
+    2. Ensure aws-core@agent-toolkit-for-aws is enabled in settings.json.
+    3. Rewrite the plugin's bundled .mcp.json to call our wrapper script so
+       AWS_REGION is resolved from the credential chain at launch time instead
+       of being hardcoded.
     """
     claude_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude"))
     wrapper = Path(AWS_MCP_WRAPPER)
@@ -273,6 +273,22 @@ def setup_aws_mcp():
             file=sys.stderr,
         )
         return
+
+    # Ensure marketplace is registered and plugin is installed. Both commands
+    # are idempotent — safe to re-run on every container creation.
+    for cmd in (
+        ["claude", "plugin", "marketplace", "add", AWS_MARKETPLACE],
+        ["claude", "plugin", "install", AWS_PLUGIN_ID],
+    ):
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"[post_install] {' '.join(cmd)}: OK", file=sys.stderr)
+        else:
+            print(
+                f"[post_install] Warning: {' '.join(cmd)} exited {result.returncode}: "
+                f"{result.stderr.strip()}",
+                file=sys.stderr,
+            )
 
     settings_file = claude_dir / "settings.json"
     settings: dict = {}
@@ -318,7 +334,7 @@ def setup_aws_mcp():
     if patched == 0:
         print(
             "[post_install] No AWS Agent Toolkit .mcp.json found to patch "
-            "(plugin may not be installed yet)",
+            "(plugin may not yet have been installed)",
             file=sys.stderr,
         )
 
