@@ -31,6 +31,7 @@ Commands:
     claude              Runs claude --dangerously-skip-permissions in the container
     rebuild             Rebuild the devcontainer (preserves auth volumes)
     down                Stop the devcontainer
+    list [-a]           List running devcontainers (-a includes stopped)
     shell               Open a shell in the running container
     self-install        Install 'devc' command to ~/.local/bin
     update              Update devc to the latest version
@@ -49,6 +50,8 @@ Examples:
     devc .                      # Install template and start container
     devc up                     # Start container in current directory
     devc down                   # Stop the running container
+    devc list                   # List running devcontainers
+    devc list -a                # List all devcontainers (including stopped)
     devc claude                 # Starts Claude in Yolo Mode
     devc rebuild                # Clean rebuild
     devc shell                  # Open interactive shell
@@ -292,6 +295,29 @@ cmd_rebuild() {
   devcontainer up --workspace-folder "$workspace_folder" --remove-existing-container
   rename_container_to_workspace "$workspace_folder"
   log_success "Devcontainer rebuilt"
+}
+
+cmd_list() {
+  local show_all=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -a|--all)
+        show_all=true
+        shift
+        ;;
+      *)
+        log_error "Unknown option: $1"
+        log_info "Usage: devc list [-a|--all]"
+        exit 1
+        ;;
+    esac
+  done
+
+  local ps_args=("--filter" "label=devcontainer.local_folder"
+    "--format" 'table {{.Names}}\t{{.Status}}\t{{.Label "devcontainer.local_folder"}}')
+  $show_all && ps_args=("-a" "${ps_args[@]}")
+
+  docker ps "${ps_args[@]}"
 }
 
 cmd_down() {
@@ -933,6 +959,9 @@ main() {
     ;;
   down)
     cmd_down "$@"
+    ;;
+  list | ls)
+    cmd_list "$@"
     ;;
   destroy)
     cmd_destroy "$@"
