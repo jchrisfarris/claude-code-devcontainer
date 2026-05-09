@@ -108,7 +108,8 @@ check_no_sys_admin() {
 }
 
 get_workspace_folder() {
-  echo "${1:-$(pwd)}"
+  local dir="${1:-.}"
+  cd "$dir" 2>/dev/null && pwd || echo "$dir"
 }
 
 # Extract custom mounts from devcontainer.json to a temp file
