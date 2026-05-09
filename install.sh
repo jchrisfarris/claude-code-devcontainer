@@ -279,6 +279,8 @@ cmd_up() {
   check_no_sys_admin "$workspace_folder"
   log_info "Starting devcontainer in $workspace_folder..."
 
+  export DEVC_BUILD_TIMESTAMP
+  DEVC_BUILD_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   devcontainer up --workspace-folder "$workspace_folder"
   rename_container_to_workspace "$workspace_folder"
   log_success "Devcontainer started"
@@ -292,6 +294,8 @@ cmd_rebuild() {
   check_no_sys_admin "$workspace_folder"
   log_info "Rebuilding devcontainer in $workspace_folder..."
 
+  export DEVC_BUILD_TIMESTAMP
+  DEVC_BUILD_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   devcontainer up --workspace-folder "$workspace_folder" --remove-existing-container
   rename_container_to_workspace "$workspace_folder"
   log_success "Devcontainer rebuilt"
@@ -314,7 +318,7 @@ cmd_list() {
   done
 
   local ps_args=("--filter" "label=devcontainer.local_folder"
-    "--format" 'table {{.Names}}\t{{.Status}}\t{{.Label "devcontainer.local_folder"}}')
+    "--format" 'table {{.Names}}\t{{.Status}}\t{{.Label "devcontainer.build.timestamp"}}\t{{.Label "devcontainer.local_folder"}}')
   $show_all && ps_args=("-a" "${ps_args[@]}")
 
   docker ps "${ps_args[@]}"
@@ -403,6 +407,8 @@ cmd_mount() {
   update_devcontainer_mounts "$devcontainer_json" "$host_path" "$container_path" "$readonly"
 
   log_info "Recreating container with new mount..."
+  export DEVC_BUILD_TIMESTAMP
+  DEVC_BUILD_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   devcontainer up --workspace-folder "$workspace_folder" --remove-existing-container
   rename_container_to_workspace "$workspace_folder"
 

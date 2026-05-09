@@ -146,3 +146,10 @@ RUN mkdir -p /opt/claude-defaults
 COPY --chown=vscode:vscode statusline.sh /opt/claude-defaults/statusline.sh
 COPY --chown=vscode:vscode aws-mcp-proxy.sh /opt/claude-defaults/aws-mcp-proxy.sh
 RUN chmod +x /opt/claude-defaults/aws-mcp-proxy.sh
+
+# Build timestamp — injected by devc at build time so `devc list` can show
+# when the image was last built. Placed last to avoid busting earlier cache layers.
+ARG BUILD_TIMESTAMP=unknown
+ENV BUILD_TIMESTAMP=$BUILD_TIMESTAMP
+LABEL devcontainer.build.timestamp=$BUILD_TIMESTAMP
+RUN echo "$BUILD_TIMESTAMP" > /etc/devcontainer-built
