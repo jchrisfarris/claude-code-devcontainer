@@ -6,6 +6,7 @@ Runs on container creation to set up:
 - Claude user config (theme, remote control, workspace trust)
 - Claude settings (bypassPermissions, hooks, statusline, deny rules)
 - Default Claude commands and statusline script
+- AWS Agent Toolkit plugin (skills; MCP server is static via ~/.mcp.json)
 - Tmux configuration (200k history, mouse support)
 - Directory ownership fixes for mounted volumes
 """
@@ -246,36 +247,22 @@ def setup_claude_defaults():
         print(f"[post_install] Installed statusline: {statusline_dst}", file=sys.stderr)
 
 
-AWS_MCP_WRAPPER = "/opt/claude-defaults/aws-mcp-proxy.sh"
 AWS_PLUGIN_ID = "aws-core@agent-toolkit-for-aws"
 AWS_MARKETPLACE = "aws/agent-toolkit-for-aws"
 
 
-def setup_aws_mcp():
-    """Wire up the AWS Agent Toolkit plugin.
+def setup_aws_plugin():
+    """Ensure the AWS Agent Toolkit plugin is installed for its skills and prompts.
 
-    Runs on every container creation so it works even when the ~/.claude
-    volume is preserved across rebuilds (which shadows the image layer where
-    the plugin was installed at build time).
+    Runs on every container creation so it works even when the ~/.claude volume
+    is preserved across rebuilds (which shadows the image layer where the plugin
+    was installed at build time).
 
-    1. Ensure the marketplace is registered and the plugin is installed.
-    2. Ensure aws-core@agent-toolkit-for-aws is enabled in settings.json.
-    3. Rewrite the plugin's bundled .mcp.json to call our wrapper script so
-       AWS_REGION is resolved from the credential chain at launch time instead
-       of being hardcoded.
+    MCP server config is handled statically via ~/.mcp.json (copied by Dockerfile).
     """
     claude_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude"))
-    wrapper = Path(AWS_MCP_WRAPPER)
 
-    if not wrapper.exists():
-        print(
-            f"[post_install] {wrapper} not found, skipping AWS MCP setup",
-            file=sys.stderr,
-        )
-        return
-
-    # Ensure marketplace is registered and plugin is installed. Both commands
-    # are idempotent — safe to re-run on every container creation.
+    # Both commands are idempotent — safe to re-run on every container creation.
     for cmd in (
         ["claude", "plugin", "marketplace", "add", AWS_MARKETPLACE],
         ["claude", "plugin", "install", AWS_PLUGIN_ID],
@@ -303,38 +290,6 @@ def setup_aws_mcp():
         )
         print(
             f"[post_install] Enabled plugin {AWS_PLUGIN_ID} in {settings_file}",
-            file=sys.stderr,
-        )
-
-    patched = 0
-    for mcp_json in claude_dir.rglob(".mcp.json"):
-        try:
-            data = json.loads(mcp_json.read_text())
-        except (json.JSONDecodeError, OSError):
-            continue
-        servers = data.get("mcpServers") if isinstance(data, dict) else None
-        if not isinstance(servers, dict):
-            continue
-        aws = servers.get("aws")
-        if not isinstance(aws, dict):
-            continue
-        args = aws.get("args") or []
-        if not any("mcp-proxy-for-aws" in str(a) for a in args):
-            continue
-        if aws.get("command") == str(wrapper) and not args:
-            continue
-        servers["aws"] = {"command": str(wrapper), "args": []}
-        mcp_json.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-        patched += 1
-        print(
-            f"[post_install] Rewrote AWS MCP server to use wrapper: {mcp_json}",
-            file=sys.stderr,
-        )
-
-    if patched == 0:
-        print(
-            "[post_install] No AWS Agent Toolkit .mcp.json found to patch "
-            "(plugin may not yet have been installed)",
             file=sys.stderr,
         )
 
@@ -522,7 +477,7 @@ def main():
     # setup_claude_user_config()
     setup_claude_defaults()
     setup_claude_settings()
-    setup_aws_mcp()
+    setup_aws_plugin()
     setup_tmux_config()
     setup_global_gitignore()
 

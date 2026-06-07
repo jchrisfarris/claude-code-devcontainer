@@ -134,7 +134,7 @@ COPY --chown=vscode:vscode .zshrc /home/vscode/.zshrc.custom
 
 # Setup AWS Config
 RUN mkdir /home/vscode/.aws
-COPY aws-config/config /home/vscode/.aws/config
+COPY --chown=vscode:vscode aws-config/config /home/vscode/.aws/config
 
 # Append custom zshrc to the main one
 RUN echo 'source ~/.zshrc.custom' >> /home/vscode/.zshrc
@@ -142,11 +142,12 @@ RUN echo 'source ~/.zshrc.custom' >> /home/vscode/.zshrc
 # Copy post_install script
 COPY --chown=vscode:vscode post_install.py /opt/post_install.py
 
-# Install Claude Code defaults (statusline + AWS Agent Toolkit MCP wrapper)
+# Install Claude Code defaults (statusline script)
 RUN mkdir -p /opt/claude-defaults
 COPY --chown=vscode:vscode statusline.sh /opt/claude-defaults/statusline.sh
-COPY --chown=vscode:vscode aws-mcp-proxy.sh /opt/claude-defaults/aws-mcp-proxy.sh
-RUN chmod +x /opt/claude-defaults/aws-mcp-proxy.sh
+
+# Global MCP server config
+COPY --chown=vscode:vscode mcp.json /home/vscode/.mcp.json
 
 # Build timestamp — injected by devc at build time so `devc list` can show
 # when the image was last built. Placed last to avoid busting earlier cache layers.

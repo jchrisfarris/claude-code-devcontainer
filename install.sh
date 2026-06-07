@@ -225,7 +225,7 @@ cmd_template() {
   cp "$SCRIPT_DIR/post_install.py" "$devcontainer_dir/"
   cp "$SCRIPT_DIR/.zshrc" "$devcontainer_dir/"
   cp "$SCRIPT_DIR/statusline.sh" "$devcontainer_dir/"
-  cp "$SCRIPT_DIR/aws-mcp-proxy.sh" "$devcontainer_dir/"
+  cp "$SCRIPT_DIR/mcp.json" "$devcontainer_dir/"
   cp -a "$SCRIPT_DIR/aws-config" "$devcontainer_dir/"
   cp -a "$SCRIPT_DIR/commands" "$devcontainer_dir/"
 
