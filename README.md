@@ -1,18 +1,35 @@
-# Claude Code Devcontainer
+# claude-yolo
 
-A sandboxed environment for running Claude Code in fully autonomous mode — with explicit, user-controlled constraints on what it can actually do.
+**A safe way to let Claude develop and deploy in AWS (and soon GCP).**
 
-Forked from [Trail of Bits](https://github.com/trailofbits/claude-code-devcontainer), with their security-focused foundations kept intact and extended with AWS credential scoping.
+Security teams and platform engineers can hand developers a fully autonomous Claude Code environment — with real guardrails — instead of choosing between "hobbled AI" and "blast radius: everything."
 
-## The Idea
+> Built on [Trail of Bits' claude-code-devcontainer](https://github.com/trailofbits/claude-code-devcontainer), which provided the sandboxing foundations. This project has diverged significantly toward a different purpose: enabling real cloud deployments with scoped IAM permissions, rather than sandboxed code review.
 
-Claude running in `--dangerously-skip-permissions` mode is productive but risky on a host machine. This repo solves that with two independent layers of constraint:
+## The Problem
 
-**1. Filesystem isolation** — Claude runs in a Docker devcontainer. It cannot touch your host files, install system packages, or affect other projects. The container is the sandbox.
+Running Claude in `--dangerously-skip-permissions` mode is productive. It's also terrifying on a host machine with developer credentials. Most security-conscious teams respond by disabling autonomy, which defeats the purpose.
 
-**2. AWS permission scoping** — When Claude needs cloud access, you inject temporary credentials scoped to a session policy. Claude starts read-only. When it hits a permission error and needs more, it edits the session policy file and asks you to re-run one command. You stay in control of what it can do in AWS without approving every individual action.
+claude-yolo solves this with two independent constraint layers that security teams control:
 
-Together these let Claude operate autonomously on real tasks — including `terraform apply` and AWS deployments — while you retain meaningful oversight without becoming a bottleneck.
+**1. Filesystem isolation** — Claude runs in a Docker devcontainer. It cannot touch host files, install system packages, or affect other projects. The container is the blast radius.
+
+**2. AWS permission scoping** — Claude starts with read-only AWS access. When it needs more, it edits a session policy file and asks the user to re-run one command. The security team defines what's in the starting policy; the user decides what Claude earns from there. No one hands Claude the keys.
+
+Together these let developers work autonomously on real infrastructure tasks — including `terraform apply` and live AWS deployments — while security teams retain meaningful oversight without becoming a bottleneck.
+
+## For Security Teams
+
+claude-yolo is designed to be deployed as a standard, organization-approved way to run Claude Code. What you control:
+
+- **The base IAM role** (`ClaudeDevContainer`) — you set the ceiling on what Claude can ever request
+- **The default session policy** — you define the starting permissions (default: read-only)
+- **The container image** — all Claude Code runs from the same hardened environment
+- **Network and filesystem constraints** — inherited from the devcontainer spec
+
+What users control:
+- What repos they clone and work on inside the container
+- Whether to approve Claude's permission escalation requests (by re-running `devc aws-creds`)
 
 ## Prerequisites
 
@@ -23,40 +40,28 @@ Together these let Claude operate autonomously on real tasks — including `terr
 
   ```bash
   npm install -g @devcontainers/cli
-  git clone https://github.com/YOUR-USERNAME/claude-code-devcontainer ~/.claude-devcontainer
-  ~/.claude-devcontainer/install.sh self-install
+  git clone https://github.com/securosis/claude-yolo ~/.claude-yolo
+  ~/.claude-yolo/install.sh self-install
   ```
 
 - **For AWS credential injection:** `uv` must be installed on the host (`brew install uv`)
 
 ## Quick Start
 
-Choose the pattern that fits your workflow:
+### Setup your workspace
 
-### Pattern A: Per-Project Container
-
-Each project gets its own isolated container. Best for one-off reviews or untrusted repos.
+A parent directory holds the devcontainer config; clone multiple repos inside. Best for multiple repos or files that don't belong in git.
 
 ```bash
-git clone <repo-url>
-cd repo
-devc .          # Install devcontainer template + start container
-devc shell      # Open shell in container
-```
-
-### Pattern B: Shared Workspace Container (preferred)
-
-A parent directory holds the devcontainer config; clone multiple repos inside. Best for multiple repos, of when you have files that doen't belong in git.
-
-```bash
-mkdir -p ~/sandbox/my-project && cd ~/sandbox/my-project
+mkdir -p ~/Development/my-project && cd ~/Development/my-project
 devc .
 devc shell
 
-# Inside container:
+# On your machine
 git clone <repo-1>
 git clone <repo-2>
-cd repo-1 && claude
+
+devc claude
 ```
 
 ## Token-Based Auth (Headless)
@@ -74,6 +79,8 @@ The token is forwarded into the container. On each container creation, `post_ins
 This works around Claude Code's interactive onboarding wizard always showing in containers, even with valid credentials ([#8938](https://github.com/anthropics/claude-code/issues/8938)).
 
 If you don't set a token, the interactive login flow works as before.
+
+**Note:** Anthropic requires you to do the OIDC (not token login) to use the `/remote-control` functionality.
 
 ## AWS Credentials
 
@@ -158,7 +165,7 @@ devc claude         Run claude --dangerously-skip-permissions in container
 There are three separate steps to getting updates, and they must happen in order:
 
 ```
-devc update       → pulls new commits into the devc source repo (~/.claude-devcontainer/)
+devc update       → pulls new commits into the devc source repo (~/.claude-yolo/)
 devc template     → copies updated Dockerfile, devcontainer.json, etc. into your project's .devcontainer/
 devc rebuild      → builds a new image from .devcontainer/ and starts a fresh container
 ```
@@ -201,8 +208,6 @@ This adds a bind mount to `devcontainer.json` and recreates the container. Exist
 
 > Avoid mounting large host directories. Every mounted path is writable from inside the container unless `--readonly` is specified.
 
-
-
 ## Container Details
 
 | Component | Details |
@@ -241,3 +246,7 @@ devc aws-creds --profile my-profile
 ```bash
 sudo chown -R $(id -u):$(id -g) ~/.config/gh
 ```
+
+## License
+
+[MIT](LICENSE) — Securosis. Built on foundations from [Trail of Bits](https://github.com/trailofbits/claude-code-devcontainer).

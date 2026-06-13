@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Repo Is
 
-A sandboxed devcontainer for running Claude Code with `bypassPermissions` safely enabled. The repo ships as a template: users clone it to `~/.claude-devcontainer/` and the `devc` CLI installs the template into target project directories.
+claude-yolo — a safe way to let Claude develop and deploy in AWS (and soon GCP). A sandboxed devcontainer for running Claude Code with `bypassPermissions` safely enabled, with scoped IAM credential injection so security teams can deploy this for their users without handing Claude unrestricted cloud access. The repo ships as a template: users clone it to `~/.claude-yolo/` and the `devc` CLI installs the template into target project directories. Built on Trail of Bits' devcontainer foundations; diverged significantly toward cloud deployment use cases.
 
 ## Key Files
 
